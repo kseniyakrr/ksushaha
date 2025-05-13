@@ -1,0 +1,71 @@
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.csproj.AssemblyReference.cache
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.Properties.Resources.resources
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.csproj.GenerateResource.cache
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.csproj.CoreCompileInputs.cache
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\bin\Debug\WindowsFormsApp2.exe.config
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\bin\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\bin\Debug\WindowsFormsApp2.pdb
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.Form1.resources
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\OneDrive\Рабочий стол\TFLAC\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.pdb
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\bin\Debug\WindowsFormsApp2.exe.config
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\bin\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\bin\Debug\WindowsFormsApp2.pdb
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.csproj.AssemblyReference.cache
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.Form1.resources
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.Properties.Resources.resources
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.csproj.GenerateResource.cache
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.csproj.CoreCompileInputs.cache
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2\obj\Debug\WindowsFormsApp2.pdb
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\bin\Debug\WindowsFormsApp2.exe.config
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\bin\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\bin\Debug\WindowsFormsApp2.pdb
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\obj\Debug\WindowsFormsApp2.csproj.AssemblyReference.cache
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\obj\Debug\WindowsFormsApp2.Form1.resources
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\obj\Debug\WindowsFormsApp2.Properties.Resources.resources
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\obj\Debug\WindowsFormsApp2.csproj.GenerateResource.cache
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\obj\Debug\WindowsFormsApp2.csproj.CoreCompileInputs.cache
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\obj\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\OneDrive\Рабочий стол\WindowsFormsApp2 — копия (2)\obj\Debug\WindowsFormsApp2.pdb
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\obj\Debug\WindowsFormsApp2.csproj.AssemblyReference.cache
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\obj\Debug\WindowsFormsApp2.Form1.resources
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\obj\Debug\WindowsFormsApp2.Properties.Resources.resources
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\obj\Debug\WindowsFormsApp2.csproj.GenerateResource.cache
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\obj\Debug\WindowsFormsApp2.csproj.CoreCompileInputs.cache
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\obj\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\obj\Debug\WindowsFormsApp2.pdb
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\bin\Debug\WindowsFormsApp2.exe.config
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\bin\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\OneDrive\Рабочий стол\3ЛАБАКсюша\данилу\bin\Debug\WindowsFormsApp2.pdb
+C:\Users\alehi\Desktop\данилу\bin\Debug\WindowsFormsApp2.exe.config
+C:\Users\alehi\Desktop\данилу\bin\Debug\WindowsFormsApp2.exe
+C:\Users\alehi\Desktop\данилу\bin\Debug\WindowsFormsApp2.pdb
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.csproj.AssemblyReference.cache
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.csproj.SuggestedBindingRedirects.cache
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.Form1.resources
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.Properties.Resources.resources
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.csproj.GenerateResource.cache
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.csproj.CoreCompileInputs.cache
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.exe
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.pdb
+C:\Users\alehi\Desktop\данилу\bin\Debug\TextFile1.html
+C:\Users\alehi\Desktop\данилу\bin\Debug\WindowsFormsApp2.exe.manifest
+C:\Users\alehi\Desktop\данилу\bin\Debug\WindowsFormsApp2.application
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.exe.manifest
+C:\Users\alehi\Desktop\данилу\obj\Debug\WindowsFormsApp2.application
+C:\Users\kskor\Downloads\данилу (3)\данилу\bin\Debug\TextFile1.html
+C:\Users\kskor\Downloads\данилу (3)\данилу\bin\Debug\WindowsFormsApp2.exe.config
+C:\Users\kskor\Downloads\данилу (3)\данилу\bin\Debug\WindowsFormsApp2.exe.manifest
+C:\Users\kskor\Downloads\данилу (3)\данилу\bin\Debug\WindowsFormsApp2.application
+C:\Users\kskor\Downloads\данилу (3)\данилу\bin\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\Downloads\данилу (3)\данилу\bin\Debug\WindowsFormsApp2.pdb
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.csproj.AssemblyReference.cache
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.Form1.resources
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.Properties.Resources.resources
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.csproj.GenerateResource.cache
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.csproj.CoreCompileInputs.cache
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.exe.manifest
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.application
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.exe
+C:\Users\kskor\Downloads\данилу (3)\данилу\obj\Debug\WindowsFormsApp2.pdb
