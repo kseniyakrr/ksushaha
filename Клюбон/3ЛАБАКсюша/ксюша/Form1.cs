@@ -1,0 +1,1902 @@
+﻿using System.Collections.Generic;
+using System.Drawing;
+using System.Data;
+using System.IO;
+using System;
+using System.Text.RegularExpressions;
+using System.Windows.Forms;
+using System.Linq;
+using System.Text;
+using static WindowsFormsApp2.Form1.LexicalAnalyzer;
+
+namespace WindowsFormsApp2
+{
+    public partial class Form1 : Form
+    {
+        private struct EditOperation
+        {
+            public string Type; // "Insert", "Delete", "Cut", "Undo"
+            public string Text; // Текст, который был вставлен, удален или вырезан
+            public int Position; // Позиция, в которой была выполнена операция
+        }
+
+        private Stack<EditOperation> undoStack = new Stack<EditOperation>();
+        private Stack<EditOperation> redoStack = new Stack<EditOperation>();
+
+        private string currentFilePath = null; // Путь к текущему файлу 
+        private bool isTextChanged = true;  // Флаг, указывающий, были ли внесены изменения
+        private bool fileSavedSinceLastChange = true;
+        private char lastCharEntered = '\0'; // Храним последний введенный символ 
+        private int i = 1;
+        private string lastOperation = ""; // Строка, запоминающая последнюю операцию для повтора
+        private string cuttedText = ""; // Строка для хранения вырезанного текста.
+
+        private bool ignoreTextChanged = false;
+        private int cursorPosition = 0;
+        public Form1()
+        {
+            InitializeComponent();
+            undoStack.Push(new EditOperation { Type = "Initial", Text = "", Position = 0 });
+            Tool_tips();
+            richTextBox1.AllowDrop = true;
+            richTextBox1.DragEnter += MainForm_DragEnter;
+            richTextBox1.DragDrop += MainForm_DragDrop;
+            richTextBox1.TextChanged += richTextBox1_TextChanged;
+
+            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.MainForm_FormClosing);
+        }
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+
+        }
+
+        public enum TokenType
+        {
+            DECLARE = 1,       // Ключевое слово
+            CONSTANT = 2,      // Ключевое слово
+            INTEGER = 3,       // Ключевое слово
+            IDENTIFIER = 4,    // Идентификатор
+            WHITESPACE = 5,    // Пробел
+            ASSIGNMENT = 6,      // Оператор
+            INTEGER_LITERAL = 7, // Целое число без знака
+            SEMICOLON = 8,     // Разделитель (в примере нет, но пусть будет)
+            INVALID = 9      // Недопустимый символ
+        }
+
+
+        private string GetLexemeTypeDescription(LexicalAnalyzer.TokenType type)
+        {
+            switch (type)
+            {
+                case LexicalAnalyzer.TokenType.DECLARE: return "Ключевое слово DECLARE";
+                case LexicalAnalyzer.TokenType.CONSTANT: return "Ключевое слово CONSTANT";
+                case LexicalAnalyzer.TokenType.INTEGER: return "Ключевое слово INTEGER";
+                case LexicalAnalyzer.TokenType.IDENTIFIER: return "Идентификатор";
+                case LexicalAnalyzer.TokenType.WHITESPACE: return "Пробел";
+                case LexicalAnalyzer.TokenType.NEWLINE: return "Перенос строки";
+                case LexicalAnalyzer.TokenType.ASSIGNMENT: return "Оператор присваивания";
+                case LexicalAnalyzer.TokenType.SIGN: return "Знак";
+                case LexicalAnalyzer.TokenType.INTEGER_LITERAL: return "Целое число без знака";
+                case LexicalAnalyzer.TokenType.END_OPERATOR: return "Конец оператора";
+                case LexicalAnalyzer.TokenType.INVALID: return "Недопустимый символ";
+                default: return "Неизвестно";
+            }
+        }
+
+
+
+
+
+
+        private void richTextBox1_TextChanged(object sender, EventArgs e)
+        {
+            if (ignoreTextChanged)
+            {
+                return;
+            }
+
+            isTextChanged = true;
+            fileSavedSinceLastChange = false;
+            int currentPosition = richTextBox1.SelectionStart;
+            int length = richTextBox1.TextLength;
+
+            //Вычисляем изменения в тексте и сохраняем операцию
+            if (undoStack.Count > 0)
+            {
+                EditOperation lastOperation = undoStack.Peek();
+                string lastText = (lastOperation.Type == "Initial") ? "" : GetTextBeforeOperation(lastOperation);
+                int lastPosition = lastOperation.Position;
+
+                if (length > lastText.Length) //Вставка
+                {
+                    string insertedText = richTextBox1.Text.Substring(lastPosition, length - lastText.Length);
+                    SaveEditOperation("Insert", insertedText, lastPosition);
+                }
+                else if (length < lastText.Length) //Удаление
+                {
+                    // Удалили с конца
+                    int deleteLength = lastText.Length - length;
+                    int deleteStart = currentPosition;
+                    if (deleteStart < 0)
+                    {
+                        deleteStart = 0;
+                    }
+
+                    string deletedText = lastText.Substring(deleteStart, deleteLength);  // Сохраняем удаленный текст
+                    SaveEditOperation("Delete", deletedText, deleteStart);
+                }
+
+                cursorPosition = richTextBox1.SelectionStart;
+            }
+
+
+
+            isTextChanged = true;
+            fileSavedSinceLastChange = false;
+            isTextChanged = false; // После любого изменения, повтор невозможен.
+            lastOperation = "TextChanged"; // Запоминаем, что было изменение текста
+            string text = richTextBox1.Text;
+            LexicalAnalyzer analyzer = new LexicalAnalyzer();
+            List<LexicalAnalyzer.Token> tokens = analyzer.Scan(text);
+
+            //Сохраняем позицию курсора
+            int selectionStart = richTextBox1.SelectionStart;
+            int selectionLength = richTextBox1.SelectionLength;
+
+            //сбрасываем все форматы
+            richTextBox1.SelectAll();
+            richTextBox1.SelectionColor = richTextBox1.ForeColor;
+            richTextBox1.SelectionFont = richTextBox1.Font; // Возвращаем исходный шрифт
+
+            int position = 0;
+            foreach (LexicalAnalyzer.Token token in tokens)
+            {
+                int startPosition = position;
+                int endPosition = startPosition + token.Value.Length;
+
+                if (token.Type == LexicalAnalyzer.TokenType.DECLARE ||
+                    token.Type == LexicalAnalyzer.TokenType.CONSTANT ||
+                    token.Type == LexicalAnalyzer.TokenType.INTEGER)
+                {
+                    if (startPosition >= 0 && startPosition + token.Value.Length <= richTextBox1.TextLength)
+                    {
+                        richTextBox1.Select(startPosition, token.Value.Length);
+                        richTextBox1.SelectionColor = Color.Blue;
+                        richTextBox1.SelectionFont = new Font(richTextBox1.Font, FontStyle.Bold); // Устанавливаем жирный шрифт
+                    }
+                }
+
+                position += token.Value.Length;
+            }
+            //Возвращаем курсор
+            richTextBox1.SelectionStart = selectionStart;
+            richTextBox1.SelectionLength = selectionLength;
+        }
+
+
+
+        private string GetTextBeforeOperation(EditOperation op)
+        {
+            string currentText = richTextBox1.Text;
+            string textBefore = "";
+
+            switch (op.Type)
+            {
+                case "Insert":
+                    // Проверяем op.Position и op.Text.Length
+                    if (op.Position >= 0 && op.Position <= currentText.Length && op.Text.Length >= 0 && (op.Position + op.Text.Length) <= currentText.Length)
+                    {
+                        textBefore = currentText.Remove(op.Position, op.Text.Length);
+                    }
+                    else
+                    {
+                        // Обрабатываем ошибку (например, возвращаем currentText)
+                        Console.WriteLine($"Ошибка Insert: op.Position = {op.Position}, op.Text.Length = {op.Text.Length}, currentText.Length = {currentText.Length}");
+                        textBefore = currentText; // Или другое разумное значение
+                    }
+                    break;
+
+                case "Delete":
+                    // Проверяем op.Position и op.Text
+                    if (op.Position >= 0 && op.Position <= currentText.Length && op.Text != null)
+                    {
+                        textBefore = currentText.Insert(op.Position, op.Text);
+                    }
+                    else
+                    {
+                        // Обрабатываем ошибку (например, возвращаем currentText)
+                        Console.WriteLine($"Ошибка Delete: op.Position = {op.Position}, op.Text = {op.Text}, currentText.Length = {currentText.Length}");
+                        textBefore = currentText; // Или другое разумное значение
+                    }
+                    break;
+
+                case "Cut":
+                    // Проверяем op.Position и op.Text
+                    if (op.Position >= 0 && op.Position <= currentText.Length && op.Text != null)
+                    {
+                        textBefore = currentText.Insert(op.Position, op.Text);
+                    }
+                    else
+                    {
+                        // Обрабатываем ошибку (например, возвращаем currentText)
+                        Console.WriteLine($"Ошибка Cut: op.Position = {op.Position}, op.Text = {op.Text}, currentText.Length = {currentText.Length}");
+                        textBefore = richTextBox1.Text; // Возвращаем исходный текст richTextBox1
+                    }
+                    break;
+
+                default:
+                    textBefore = richTextBox1.Text;
+                    break;
+            }
+
+            return textBefore;
+        }
+
+
+
+        private void SaveEditOperation(string type, string text, int position)
+        {
+            EditOperation newOperation = new EditOperation
+            {
+                Type = type,
+                Text = text,
+                Position = position
+            };
+
+            undoStack.Push(newOperation);
+            redoStack.Clear();
+        }
+
+
+
+        private void файлToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            MenuStrip menuStrip = new MenuStrip();
+            ToolStripMenuItem fileMenu = new ToolStripMenuItem("Файл");
+            ToolStripMenuItem createMenuItem = new ToolStripMenuItem("Создать");
+            ToolStripMenuItem openMenuItem = new ToolStripMenuItem("Открыть");
+            ToolStripMenuItem saveMenuItem = new ToolStripMenuItem("Сохранить");
+            ToolStripMenuItem saveAsMenuItem = new ToolStripMenuItem("Сохранить как");
+            ToolStripMenuItem exitAsMenuItem = new ToolStripMenuItem("Выход");
+        }
+
+        private void Создать_Click(object sender, EventArgs e)
+        {
+            using (SaveFileDialog saveFileDialog = new SaveFileDialog())
+            {
+                saveFileDialog.InitialDirectory = "c:\\Compiler"; // начальная директория
+                saveFileDialog.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"; //  фильтр файлов
+                saveFileDialog.FilterIndex = 1; // индекс фильтра по умолчанию
+                saveFileDialog.FileName = "НовыйФайл.txt"; // имя файла по умолчанию
+
+                // диалог и резул
+                if (saveFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    string filePath = saveFileDialog.FileName; // получаем путь к выбранному файлу
+                    currentFilePath = filePath; // Присваиваем путь переменной currentFilePath
+                    try
+                    {
+                        // Сохранение содержимого richTextBox в файл
+                        System.IO.File.WriteAllText(filePath, richTextBox1.Text);
+                        MessageBox.Show("Файл успешно сохранен!", "Успешно", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Ошибка при сохранении файла: " + ex.Message);
+                    }
+                }
+            }
+        }
+
+        private void Выход_Click(object sender, EventArgs e)
+        {
+
+            Application.Exit(); // Завершаем приложение
+        }
+
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            // Проверяем, есть ли несохраненные изменения
+            if (isTextChanged)
+            {
+                // Если изменений нет, просто выходим без вопросов
+                return;
+            }
+
+            // Если есть несохраненные изменения, показываем сообщение с запросом на сохранение
+            var saveResult = MessageBox.Show(
+                "У вас есть несохранённые изменения. Сохранить перед выходом?",
+                "Подтверждение",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Question
+            );
+
+            // Обрабатываем ответ пользователя
+            switch (saveResult)
+            {
+                case DialogResult.Yes:
+                    // Пользователь выбрал "Да" (сохранить)
+                    if (currentFilePath != null)
+                    {
+                        // Сохраняем в существующий файл
+                        if (!SaveFile())
+                        {
+                            // Сохранение не удалось, отменяем закрытие формы
+                            e.Cancel = true;
+                            MessageBox.Show("Не удалось сохранить файл.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                    else
+                    {
+                        // Нет текущего файла, вызываем "Сохранить как..."
+                        СохранитьКак_Click(sender, e);
+
+                        // После "Сохранить как..." проверяем, остались ли несохраненные изменения
+                        if (isTextChanged)
+                        {
+                            // Если изменения остались (пользователь отменил сохранение), отменяем закрытие
+                            e.Cancel = true;
+                        }
+                    }
+                    break;
+
+                case DialogResult.No:
+                    // Пользователь выбрал "Нет" (не сохранять), закрытие продолжится
+                    break;
+
+                case DialogResult.Cancel:
+                    // Пользователь выбрал "Отмена", отменяем закрытие формы
+                    e.Cancel = true;
+                    break;
+            }
+        }
+
+
+
+
+        private void Открыть_Click(object sender, EventArgs e)
+        {
+            // Проверяем, есть ли несохраненные изменения
+            if (!isTextChanged)
+            {
+                // Спрашиваем пользователя, хочет ли он сохранить текущий файл
+                var dialogResult = MessageBox.Show(
+                    "У вас есть несохранённые изменения. Сохранить перед открытием нового файла?",
+                    "Подтверждение",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Question);
+
+                // Обрабатываем ответ пользователя
+                switch (dialogResult)
+                {
+                    case DialogResult.Yes:
+                        // Пытаемся сохранить файл
+                        if (currentFilePath != null)
+                        {
+                            if (!SaveFile()) // Если сохранение не удалось
+                                return; // Прерываем операцию открытия
+                        }
+                        else
+                        {
+                            СохранитьКак_Click(sender, e);
+                            if (isTextChanged) // Если после "Сохранить как..." изменения остались
+                                return; // Значит сохранение было отменено, прерываем операцию
+                        }
+                        break;
+
+                    case DialogResult.No:
+                        // Просто продолжаем открытие нового файла
+                        break;
+
+                    case DialogResult.Cancel:
+                        // Пользователь отменил операцию
+                        return;
+                }
+            }
+
+            // Продолжаем процесс открытия файла
+            OpenFileDialog openFileDialog1 = new OpenFileDialog();
+            openFileDialog1.Filter = "Текстовые файлы (*.txt)|*.txt|Все файлы (*.*)|*.*";
+            openFileDialog1.Title = "Открыть текстовый файл";
+
+            if (openFileDialog1.ShowDialog() == DialogResult.OK)
+            {
+                try
+                {
+                    currentFilePath = openFileDialog1.FileName;
+                    richTextBox1.Text = File.ReadAllText(currentFilePath);
+                    isTextChanged = false; // Сбрасываем флаг изменений
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Ошибка при открытии файла: " + ex.Message,
+                                    "Ошибка",
+                                    MessageBoxButtons.OK,
+                                    MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        // Общая функция для проверки необходимости сохранения и его выполнения
+        private bool CheckAndSaveFile()
+        {
+            if (!isTextChanged) // Проверяем, были ли изменения
+            {
+                var saveResult = MessageBox.Show("У Вас есть несохраненные изменения. Хотите сохранить их?", "Сохранить изменения", MessageBoxButtons.YesNoCancel);
+
+                if (saveResult == DialogResult.Yes)
+                {
+                    if (currentFilePath != null)
+                    {
+                        SaveFile();
+                    }
+                    else
+                    {
+                        СохранитьКак_Click(this, EventArgs.Empty);
+                    }
+                    // Проверяем, удалось ли сохранить файл
+                    if (isTextChanged) // Если сохранение не удалось
+                    {
+                        return false; // Отменяем операцию
+                    }
+                }
+                else if (saveResult == DialogResult.Cancel)
+                {
+                    return false; // Отменяем операцию
+                }
+            }
+
+            return true; // продолжаем операцию
+        }
+
+        private void СохранитьКак_Click(object sender, EventArgs e)
+        {
+            SaveFileDialog saveFileDialog1 = new SaveFileDialog();
+            isTextChanged = false;
+
+            saveFileDialog1.Filter = "Текстовые файлы (*.txt)|*.txt|Все файлы (*.*)|*.*";
+            saveFileDialog1.Title = "Сохранить как...";
+
+            if (saveFileDialog1.ShowDialog() == DialogResult.OK)
+            {
+                try
+                {
+                    currentFilePath = saveFileDialog1.FileName; // Сохраняем путь к файлу
+                    SaveFile();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Ошибка при сохранении файла: " + ex.Message);
+                    isTextChanged = true; // Сохранение не удалось
+                }
+            }
+            else
+            {
+
+                //isTextChanged = true; 
+            }
+        }
+
+        //перезапись
+        bool SaveFile()
+        {
+            try
+            {
+                File.WriteAllText(currentFilePath, richTextBox1.Text);
+                isTextChanged = false; // Сбрасываем флаг изменений после сохранения
+                return true;  // Сохранение успешно
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при сохранении файла: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;  // Сохранение не удалось
+            }
+
+
+        }
+
+        private void Сохранить_Click_1(object sender, EventArgs e)
+        {
+            if (currentFilePath != null)
+            {
+                SaveFile();
+            }
+            else
+            {
+                СохранитьКак_Click(sender, e);
+            }
+
+            fileSavedSinceLastChange = true;
+            isTextChanged = false;
+        }
+
+
+
+
+
+
+
+        private void Отменить_Click(object sender, EventArgs e)
+        {
+            if (undoStack.Count > 1)
+            {
+                EditOperation lastOperation = undoStack.Pop();
+
+                if (lastOperation.Type == "Cut" && lastOperation.Text.Length > 0)
+                {
+                    // Отмена вырезания: возвращаем по одному символу с конца
+                    string cutText = lastOperation.Text;
+                    int insertPosition = lastOperation.Position;
+
+                    EditOperation undoOperation = new EditOperation
+                    {
+                        Type = "Insert",  // Инвертируем операцию для redo
+                        Text = cutText.Substring(cutText.Length - 1),
+                        Position = insertPosition
+                    };
+                    redoStack.Push(undoOperation);
+
+                    ignoreTextChanged = true;
+                    richTextBox1.Text = richTextBox1.Text.Insert(insertPosition, cutText.Substring(cutText.Length - 1));
+                    ignoreTextChanged = false;
+
+                    cursorPosition = insertPosition;
+                }
+                else if (lastOperation.Type == "Delete")
+                {
+                    string currentText = richTextBox1.Text;
+
+                    ignoreTextChanged = true;
+                    richTextBox1.Text = richTextBox1.Text.Insert(lastOperation.Position, lastOperation.Text);
+                    ignoreTextChanged = false;
+
+                    redoStack.Push(lastOperation);
+                }
+                else
+                {
+                    string currentText = richTextBox1.Text;
+
+                    if (string.IsNullOrEmpty(currentText))
+                    {
+                        MessageBox.Show("Нечего отменять, текст пуст.");
+                        return;
+                    }
+
+                    int lastPosition = currentText.Length - 1;
+                    string deletedChar = currentText.Substring(lastPosition, 1);
+
+                    EditOperation undoOperation = new EditOperation
+                    {
+                        Type = "Delete",
+                        Text = deletedChar,
+                        Position = lastPosition
+                    };
+
+                    redoStack.Push(undoOperation);
+
+                    ignoreTextChanged = true;
+                    richTextBox1.Text = currentText.Remove(lastPosition, 1);
+                    ignoreTextChanged = false;
+                }
+
+                undoStack.Push(lastOperation);
+
+                richTextBox1.SelectionStart = richTextBox1.TextLength;
+                richTextBox1.SelectionLength = 0;
+                richTextBox1.Focus();
+
+                isTextChanged = true;
+                fileSavedSinceLastChange = false;
+            }
+            else
+            {
+                MessageBox.Show("Нечего отменять.");
+            }
+        }
+
+
+
+        private void Повторить_Click_1(object sender, EventArgs e)
+        {
+            if (redoStack.Count > 0)
+            {
+                EditOperation operationToRedo = redoStack.Pop();
+
+                ignoreTextChanged = true;
+
+                switch (operationToRedo.Type)
+                {
+                    case "Insert":
+                        richTextBox1.Text = richTextBox1.Text.Insert(operationToRedo.Position, operationToRedo.Text.Substring(0, 1));
+                        break;
+
+                    case "Delete":
+                        // Добавляем по одному символу с конца
+                        if (operationToRedo.Text.Length > 0)
+                        {
+                            richTextBox1.Text = richTextBox1.Text.Insert(operationToRedo.Position, operationToRedo.Text.Substring(0, 1));
+                        }
+                        break;
+
+                    case "Cut":
+                        richTextBox1.Text = richTextBox1.Text.Insert(operationToRedo.Position, operationToRedo.Text);
+                        break;
+                }
+
+                ignoreTextChanged = false;
+
+                // cursorPosition = operationToRedo.Position;  // Исходная позиция
+                cursorPosition = richTextBox1.TextLength; // Устанавливаем в конец текста
+
+                richTextBox1.SelectionStart = cursorPosition;
+                richTextBox1.SelectionLength = 0;
+                richTextBox1.Focus();
+
+                isTextChanged = true;
+                fileSavedSinceLastChange = false;
+
+                undoStack.Push(operationToRedo);
+            }
+            else
+            {
+                MessageBox.Show("Нечего повторять.");
+            }
+        }
+
+
+        private void Вырезать_Click(object sender, EventArgs e)
+        {
+            if (richTextBox1.SelectionLength > 0)
+            {
+                cuttedText = richTextBox1.SelectedText;
+                int start = richTextBox1.SelectionStart;
+
+                SaveEditOperation("Cut", cuttedText, start);
+                richTextBox1.Cut(); // Это вызовет TextChanged
+
+                cursorPosition = start;
+            }
+            else
+            {
+                MessageBox.Show("Нечего вырезать.");
+            }
+        }
+
+        private void Копировать_Click_1(object sender, EventArgs e)
+        {
+            // Проверяем, есть ли выделенный текст
+            if (richTextBox1.SelectedText.Length > 0)
+            {
+                // Копируем выделенный текст 
+                Clipboard.SetText(richTextBox1.SelectedText);
+            }
+        }
+
+        private void Вставить_Click_1(object sender, EventArgs e)
+        {
+            // Проверяем, есть ли что-то в буфере обмена
+            if (Clipboard.ContainsText())
+            {
+                // Получаем текст из буфера обмена
+                string clipboardText = Clipboard.GetText();
+
+                // Определяем, есть ли выделенный текст в RichTextBox
+                if (richTextBox1.SelectionLength > 0)
+                {
+                    // Заменяем выделенный текст текстом из буфера обмена
+                    richTextBox1.SelectedText = clipboardText;
+                }
+                else
+                {
+                    // Вставляем текст в текущую позицию курсора
+                    richTextBox1.Paste();
+
+                }
+            }
+            else
+            {
+
+                MessageBox.Show("В буфере обмена нет текста.");
+            }
+        }
+
+
+
+        private void Удалить_Click(object sender, EventArgs e)
+        {
+            // Проверяем, выделен ли какой-либо текст в RichTextBox
+            if (richTextBox1.SelectionLength > 0)
+            {
+                // диалоговое окно с вопросом о подтверждении удаления
+                DialogResult result = MessageBox.Show("Вы уверены, что хотите удалить выделенный текст?", "Подтверждение удаления", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                if (result == DialogResult.Yes)
+                {
+                    richTextBox1.SelectedText = "";
+                }
+                else
+                {
+
+                }
+            }
+            else
+            {
+
+                MessageBox.Show("Необходимо выделить текст для удаления.");
+            }
+        }
+
+
+        private void ВыделитьВсе_Click(object sender, EventArgs e)
+        {
+
+            richTextBox1.SelectAll();
+        }
+
+
+        private void оПрограммеToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // Создаем и отображаем окно "О программе" с информацией о программе
+            string programName = "Текстовый редактор";
+            string version = "1.0";
+            string author = "Коршунова Ксения"; // Замените на ваше имя
+            string description = "Простой текстовый редактор с базовыми функциями.";
+
+
+            string message = $"{programName} (Версия {version})\n\n" +
+                             $"{description}\n\n" +
+                             $"Автор: {author}\n";
+
+            MessageBox.Show(message, "О программе", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+
+
+        private void richTextBox2_TextChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void Шрифт_Click(object sender, EventArgs e)
+        {
+            using (FontDialog fontDialog = new FontDialog())
+            {
+                if (fontDialog.ShowDialog() == DialogResult.OK)
+                {
+                    // Изменение шрифта в окне редактирования
+                    richTextBox1.Font = fontDialog.Font;
+                    // Изменение шрифта в окне вывода результатов
+                    richTextBox2.Font = fontDialog.Font;
+                }
+            }
+        }
+
+
+        private void Tool_tips()
+        {
+            toolTip1.SetToolTip(this.Создать, "Создать");
+            toolTip1.SetToolTip(this.Открыть, "Открыть");
+            toolTip1.SetToolTip(this.Сохранить, "Сохранить");
+            toolTip1.SetToolTip(this.Отменить, "Отменить");
+            toolTip1.SetToolTip(this.Повторить, "Повторить");
+            toolTip1.SetToolTip(this.Копировать, "Копировать");
+            toolTip1.SetToolTip(this.Вырезать, "Вырезать");
+            toolTip1.SetToolTip(this.Язык, "Язык");
+            toolTip1.SetToolTip(this.Шрифт, "Шрифт");
+            toolTip1.SetToolTip(this.Вставить, "Вставить");
+
+
+        }
+
+        private void Язык_Click_1(object sender, EventArgs e)
+        {
+            if (i == 1) { i = 0; }
+            else i = 1;
+            switch (i)
+            {
+                case 0:
+                    файлToolStripMenuItem.Text = "File";
+                    создатьToolStripMenuItem.Text = "Create";
+                    открытьToolStripMenuItem.Text = "Open";
+                    сохранитьToolStripMenuItem.Text = "Save";
+                    сохранитьКакToolStripMenuItem.Text = "Save as";
+                    выходToolStripMenuItem.Text = "Exit";
+                    правкаToolStripMenuItem.Text = "Edit";
+                    отменитьToolStripMenuItem.Text = "Undo";
+                    повторитьToolStripMenuItem.Text = "Redo";
+                    вырезатьToolStripMenuItem.Text = "Cut";
+                    копироватьToolStripMenuItem.Text = "Copy";
+                    вставитьToolStripMenuItem.Text = "Paste";
+                    удалитьToolStripMenuItem.Text = "Delete";
+                    выделитьВсеToolStripMenuItem.Text = "Select all";
+                    текстToolStripMenuItem.Text = "Text";
+                    постановкаЗадачиToolStripMenuItem.Text = "Task";
+                    грамматикаToolStripMenuItem.Text = "Grammar";
+                    классификацияГрамматикиToolStripMenuItem.Text = "Grammar classification";
+                    методАнализаToolStripMenuItem.Text = "Aalysis method";
+                    диагностикаИНейтрализацияОшибокToolStripMenuItem.Text = "Debag";
+                    тестовыйПримерToolStripMenuItem.Text = "Text example";
+                    списокЛитературыToolStripMenuItem.Text = "Bibliography";
+                    исходныйКодПрограммыToolStripMenuItem.Text = "Source code";
+                    пускToolStripMenuItem.Text = "Run";
+                    справкаToolStripMenuItem.Text = "Help";
+                    вызовСправкиToolStripMenuItem.Text = "Help";
+                    оПрограммеToolStripMenuItem.Text = "About programm";
+
+                    break;
+
+                case 1:
+                    файлToolStripMenuItem.Text = "Файл";
+                    создатьToolStripMenuItem.Text = "Создать";
+                    открытьToolStripMenuItem.Text = "Открыть";
+                    сохранитьToolStripMenuItem.Text = "Сохранить";
+                    сохранитьКакToolStripMenuItem.Text = "Сохранить как";
+                    выходToolStripMenuItem.Text = "Выход";
+                    правкаToolStripMenuItem.Text = "Правка";
+                    отменитьToolStripMenuItem.Text = "Отменить";
+                    повторитьToolStripMenuItem.Text = "Повторить";
+                    вырезатьToolStripMenuItem.Text = "Вырезать";
+                    копироватьToolStripMenuItem.Text = "Копировать";
+                    вставитьToolStripMenuItem.Text = "Вставить";
+                    удалитьToolStripMenuItem.Text = "Удалить";
+                    выделитьВсеToolStripMenuItem.Text = "Выделить все";
+                    текстToolStripMenuItem.Text = "Текст";
+                    постановкаЗадачиToolStripMenuItem.Text = "Постановка задачи";
+                    грамматикаToolStripMenuItem.Text = "Грамматика";
+                    классификацияГрамматикиToolStripMenuItem.Text = "Классификация грамматики";
+                    методАнализаToolStripMenuItem.Text = "Метод анализа";
+                    диагностикаИНейтрализацияОшибокToolStripMenuItem.Text = "Диагностика и нейтрализация ошибок";
+                    тестовыйПримерToolStripMenuItem.Text = "Текстовый пример";
+                    списокЛитературыToolStripMenuItem.Text = "Список литературы";
+                    исходныйКодПрограммыToolStripMenuItem.Text = "Исходный код программы";
+                    пускToolStripMenuItem.Text = "Пуск";
+                    справкаToolStripMenuItem.Text = "Справка";
+                    вызовСправкиToolStripMenuItem.Text = "Вызов справки";
+                    оПрограммеToolStripMenuItem.Text = "О программе";
+
+                    break;
+            }
+        }
+        // Обработчик события DragEnter
+        private void MainForm_DragEnter(object sender, DragEventArgs e)
+        {
+            // Проверяем, что перетаскиваемый объект является файлом
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                e.Effect = DragDropEffects.Copy; // Разрешаем копирование
+            }
+            else
+            {
+                e.Effect = DragDropEffects.None; // Запрещаем перетаскивание
+            }
+        }
+
+        // Обработчик события DragDrop
+        private void MainForm_DragDrop(object sender, DragEventArgs e)
+        {
+            // Получаем массив перетаскиваемых файлов
+            string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+
+            // Проверяем, что перетащен хотя бы один файл
+            if (files != null && files.Length > 0)
+            {
+                currentFilePath = files[0]; // Берем первый файл
+
+                // Проверяем, что файл имеет расширение .txt
+                if (Path.GetExtension(currentFilePath).ToLower() == ".txt")
+                {
+                    try
+                    {
+                        // Читаем содержимое файла и отображаем его 
+                        richTextBox1.Text = File.ReadAllText(currentFilePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Ошибка при открытии файла: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Поддерживаются только текстовые файлы (.txt).", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        }
+
+        //private void button1_Click_1(object sender, EventArgs e)
+        //{
+        //    dataGridView1.Rows.Clear();
+        //    dataGridView1.Columns.Clear();
+        //    richTextBox2.Clear();
+
+        //    // Сброс выделения
+        //    richTextBox1.SelectAll();
+        //    richTextBox1.SelectionColor = richTextBox1.ForeColor;
+        //    richTextBox1.SelectionFont = richTextBox1.Font;
+        //    richTextBox1.SelectionLength = 0;
+
+        //    // Анализ
+        //    string text = richTextBox1.Text;
+        //    SyntaxAnalyzer analyzer = new SyntaxAnalyzer();
+        //    List<SyntaxError> errors = analyzer.Parse(text);
+
+        //    // Настройка таблицы
+        //    dataGridView1.Columns.Add("Number", "№");
+        //    dataGridView1.Columns.Add("Position", "Местоположение");
+        //    dataGridView1.Columns.Add("Message", "Сообщение");
+
+        //    dataGridView1.Columns["Number"].Width = 40;
+        //    dataGridView1.Columns["Position"].Width = 150;
+        //    dataGridView1.Columns["Message"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+
+        //    // Заполнение данных
+        //    for (int i = 0; i < errors.Count; i++)
+        //    {
+        //        // В методе button1_Click_1 измените строку добавления в DataGridView:
+        //        dataGridView1.Rows.Add(
+        //            i + 1,
+        //            $"с {errors[i].Position} по {errors[i].EndPosition} символы",
+        //            errors[i].Message // Просто используем Message без добавления лишнего "(Найдено...)"
+        //        );
+        //    }
+
+        //    // Подсветка ошибок
+        //    HighlightErrorsInText(errors);
+
+        //    // Статус
+        //    richTextBox2.Text = errors.Count == 0
+        //        ? "Ошибок не обнаружено. Синтаксический анализ завершен успешно."
+        //        : $"Найдено ошибок: {errors.Count}";
+        //}
+        private void button1_Click_1(object sender, EventArgs e)
+        {
+
+            dataGridView1.Rows.Clear();
+            dataGridView1.Columns.Clear();
+            // Настройка таблицы
+            dataGridView1.Columns.Add("Number", "№");
+            dataGridView1.Columns.Add("Position", "Местоположение");
+            dataGridView1.Columns.Add("Message", "Сообщение");
+
+            dataGridView1.Columns["Number"].Width = 40;
+            dataGridView1.Columns["Position"].Width = 150;
+            dataGridView1.Columns["Message"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+
+            try
+            {
+                // Получаем все строки из richTextBox1
+                string[] lines = richTextBox1.Lines;
+                int count = 1;
+                // Обрабатываем каждую строку отдельно
+                for (int lineNumber = 0; lineNumber < lines.Length; lineNumber++)
+                {
+                    string line = lines[lineNumber];
+                    // Если нужно удалять незначительные пробелы, раскомментируйте следующую строку
+                    // line = RemoveInsignificantSpaces(line);
+
+                    List<Token> tokens = Parse(line);
+
+                    foreach (Token token in tokens)
+                    {
+                        // Добавляем информацию о строке в dataGridView1
+                        dataGridView1.Rows.Add(
+                            lineNumber + 1, // Нумерация строк начинается с 1
+                            $"с {token.StartPosition} по {token.EndPosition}",
+                            token.Messege
+                            
+                        );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка: {ex.Message}");
+            }
+        }
+        private List<Token> Parse(string code)
+        {
+            List<Token> tokens = new List<Token>();
+
+            int line = 1;
+            int lineStartPosition = 0;
+            int currentState = 0;
+            int position = 0;
+            while (position < code.Length)
+            {
+                char current = code[position];
+                int charPositionInLine = position - lineStartPosition;
+                switch (currentState)
+                {
+                    case 0://Проверка на DECLARE
+                        while (char.IsWhiteSpace(current))
+                        {
+                            position++;
+                            current = code[position];
+                        }
+                        lineStartPosition = position;
+                        bool contains = code.Contains("DECLARE ");
+                        if (contains)
+                        {
+                            position = find("DECLARE ", code);
+                            if (lineStartPosition != position)
+                                tokens.Add(new Token(
+                                    line, lineStartPosition, position, "Ожидалось DECLARE"
+                                ));
+                            position += 7;
+                        }
+                        else
+                        {
+                            position += 8;
+                            tokens.Add(new Token(
+                                    line, lineStartPosition, position, "Ожидалось DECLARE"
+                                ));
+                        }
+                        currentState = 1;
+                        break;
+
+                    case 1://Проверка на индификатор
+                        lineStartPosition = position;
+                        while (char.IsWhiteSpace(current))
+                        {
+                            position++;
+                            current = code[position];
+                        }
+                        if (lineStartPosition != position)
+                        {
+                            lineStartPosition = position;
+                            while (position < code.Length && (char.IsLetterOrDigit(code[position]) || code[position] == '_') && code[position] != ' ')
+                            {
+                                position++;
+                            }
+                            if (position == lineStartPosition)
+                                tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После DECLARE ожидался индификатор"
+                                ));
+                            currentState = 2;
+                        }
+                        break;
+
+                    case 2://Проверка на CONSTANT
+                        // Пропускаем пробелы
+                        while (char.IsWhiteSpace(current))
+                        {
+                            position++;
+                            current = code[position];
+                        }
+
+                        lineStartPosition = position;
+                        contains = code.Contains(" CONSTANT ");
+                        if (contains)
+                        {
+                            position = find(" CONSTANT ", code) + 1;
+                            if (lineStartPosition != position)
+                                tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После индификатора ожидался CONSTANT"
+                                ));
+                            position += 8;
+                        }
+                        else
+                        {
+                            position = find(" INTEGER ", code) + 1;
+                            tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После индификатора ожидался CONSTANT"
+                                ));
+                        }
+                        currentState = 3;
+                        break;
+
+                    case 3://Проверка на NUMERIC
+                        // Пропускаем пробелы
+                        while (char.IsWhiteSpace(current))
+                        {
+                            position++;
+                            current = code[position];
+                        }
+
+                        lineStartPosition = position;
+                        contains = code.Contains(" INTEGER ");
+                        if (contains)
+                        {
+                            position = find(" INTEGER ", code) + 1;
+                            if (lineStartPosition != position)
+                                tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После CONSTANT ожидался INTEGER"
+                                ));
+                            position += 7;
+                        }
+                        else
+                        {
+                            position = find(" := ", code) + 1;
+                            tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После CONSTANT ожидался INTEGER"
+                                ));
+                        }
+                        currentState = 4;
+                        break;
+
+                    case 4: //Проверка на оператор присваивания
+                        // Пропускаем пробелы
+                        while (char.IsWhiteSpace(current))
+                        {
+                            position++;
+                            current = code[position];
+                        }
+
+                        lineStartPosition = position;
+                        contains = code.Contains(" :=");
+                        if (contains)
+                        {
+                            position = find(" :=", code);
+                            if (lineStartPosition - 1 != position)
+                                tokens.Add(new Token(
+                                    line, lineStartPosition - 1, position, "После INTEGER ожидался :="
+                                ));
+                            position += 2;
+                        }
+
+                        else
+                        {
+
+                            
+                            
+
+                            tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После INTEGER ожидался :="
+                                ));
+                        }
+
+                        currentState = 5;
+                        break;
+
+                    case 5: //Проверка на дробное число 
+                        // Пропускаем пробелы
+                        while (char.IsWhiteSpace(current))
+                        {
+                            position++;
+                            current = code[position];
+                        }
+
+                        lineStartPosition = position;
+                        // Проверяем, есть ли в строке ":="
+                        if (code.Contains(":="))
+                        {
+                            bool foundDigit = false;
+                            while (position < code.Length && !char.IsDigit(code[position]))
+                            {
+                                position++;
+                            }
+
+                            // Запоминаем начало числа
+                            int numberStart = position;
+
+                            // Пропускаем все цифры (если они есть)
+                            while (position < code.Length && char.IsDigit(code[position]))
+                            {
+                                position++;
+                                foundDigit = true;
+                            }
+
+                            // Если цифры не были найдены после ":="
+                            if (!foundDigit)
+                            {
+                                tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После := ожидалось целое число"
+                                ));
+                            }
+                        }
+                        
+
+                        while (position < code.Length && (char.IsDigit(code[position])))
+                        {
+                            position++;
+                        }
+                        
+                        //position--;
+                        currentState = 6;
+                        if (position == code.Length)
+                            if (code[position-1] != ';')
+                                tokens.Add(new Token(
+                                        line, lineStartPosition, position, "; Ожидалась в конце"
+                                    ));
+                        break;
+
+                    case 6:
+                        // Пропускаем пробелы
+                        while (char.IsWhiteSpace(current))
+                        {
+                            position++;
+                            current = code[position];
+                        }
+                        lineStartPosition = position;
+                        if (code.Contains(";"))
+                        {
+                            position = find(";", code);
+                            if (lineStartPosition != position)
+                                tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После целого числа ожидалась ;"
+                                ));
+                        }
+                        if (!(code.Contains(";")))
+                        {
+                            tokens.Add(new Token(
+                                    line, lineStartPosition, position, "После целого числа ожидалась ;"
+                                ));
+                        }
+                        position += 1;
+                        currentState = 7;
+                        break;
+                }
+            }
+            return tokens;
+        }
+        private int find(string fs, string code)
+        {
+            return code.IndexOf(fs);
+        }
+        private string RemoveInsignificantSpaces(string input)
+        {
+            StringBuilder result = new StringBuilder();
+            bool inStringLiteral = false;
+            bool spaceAdded = true; // Начинаем с true, чтобы не добавлять пробелы в начале
+
+            for (int i = 0; i < input.Length; i++)
+            {
+                char c = input[i];
+
+                if (c == '\'')
+                {
+                    inStringLiteral = !inStringLiteral;
+                    result.Append(c);
+                    spaceAdded = false;
+                }
+                else if (inStringLiteral)
+                {
+                    result.Append(c);
+                    spaceAdded = false;
+                }
+                else if (char.IsWhiteSpace(c))
+                {
+                    if (!spaceAdded && (i + 1 < input.Length) && !IsOperatorChar(input[i + 1]))
+                    {
+                        result.Append(' ');
+                        spaceAdded = true;
+                    }
+                }
+                else
+                {
+                    result.Append(c);
+                    spaceAdded = false;
+                }
+            }
+
+            return result.ToString().Trim();
+        }
+        private bool IsOperatorChar(char c)
+        {
+            return c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == ';';
+        }
+        private class Token
+        {
+            public int Line { get; }
+            public int StartPosition { get; }
+            public int EndPosition { get; }
+            public string Messege { get; }
+
+            public Token(int line, int startPos, int endPos, string messege)
+            {
+                Line = line;
+                StartPosition = startPos;
+                EndPosition = endPos;
+                Messege = messege;
+            }
+        }
+        private void HighlightErrorsInText(List<SyntaxError> errors)
+        {
+            if (errors == null || errors.Count == 0) return;
+
+            int selectionStart = richTextBox1.SelectionStart;
+            int selectionLength = richTextBox1.SelectionLength;
+
+            foreach (var error in errors)
+            {
+                int start = Math.Max(0, error.Position - 1);
+                int end = Math.Min(error.EndPosition - 1, richTextBox1.TextLength - 1);
+                int length = end - start + 1;
+
+                if (start < richTextBox1.TextLength)
+                {
+                    richTextBox1.Select(start, length);
+                    richTextBox1.SelectionColor = Color.Red;
+                    richTextBox1.SelectionFont = new Font(richTextBox1.Font, FontStyle.Bold);
+                }
+            }
+
+            richTextBox1.SelectionStart = selectionStart;
+            richTextBox1.SelectionLength = selectionLength;
+            richTextBox1.SelectionColor = richTextBox1.ForeColor;
+            richTextBox1.SelectionFont = richTextBox1.Font;
+        }
+        private int ExtractEndPosition(string location)
+        {
+            // Пример: "Строка 1, c 1 по 7 символы"
+            int startIndex = location.IndexOf(" по ") + 4;
+            int endIndex = location.IndexOf(" символы", startIndex);
+            if (startIndex >= 4 && endIndex > startIndex)
+            {
+                string endPositionString = location.Substring(startIndex, endIndex - startIndex);
+                if (int.TryParse(endPositionString, out int endPosition))
+                {
+                    return endPosition - 1; // Вычитаем 1, так как нумерация в RichTextBox начинается с 0
+                }
+            }
+            return -1; // Ошибка
+        }
+
+        private void Пуск_Click(object sender, EventArgs e)
+        {
+            button1_Click_1(sender, e);
+
+        }
+
+
+        public class LexicalAnalyzer
+        {
+            public enum TokenType
+            {
+
+                DECLARE = 1,                // code = 1,  Ключевое слово DECLARE
+                CONSTANT = 2,               // code = 2,  Ключевое слово CONSTANT
+                INTEGER = 3,                // code = 3,  Ключевое слово INTEGER
+                IDENTIFIER = 4,             // code = 4,  Идентификатор
+                WHITESPACE = 5,             // code = 5,  Пробел - разделитель
+                NEWLINE = 6,                // code = 6,  Перенос на следующую строку - разделитель
+                ASSIGNMENT = 7,               // code = 7,  Оператор присваивания
+                SIGN = 8,                     // code = 8,  Знак (+ или -)
+                INTEGER_LITERAL = 9,        // code = 9,  Целое без знака
+                END_OPERATOR = 10,            // code = 10, Конец оператора
+                INVALID = 11,               // ERROR, Недопустимый символ
+            }
+
+            public struct Token
+            {
+                public TokenType Type;
+                public string Value;
+                public int Line;
+                public int Column;
+            }
+
+            public List<Token> Scan(string text)
+            {
+                List<Token> tokens = new List<Token>();
+                string[] lines = text.Split(new[] { Environment.NewLine }, StringSplitOptions.None); // Разделяем на строки
+
+                for (int lineNumber = 0; lineNumber < lines.Length; lineNumber++)
+                {
+                    string line = lines[lineNumber];
+                    int columnNumber = 0;
+                    while (columnNumber < line.Length)
+                    {
+                        Token? token = GetNextToken(line, columnNumber, lineNumber);
+                        if (token.HasValue)
+                        {
+                            tokens.Add(token.Value);
+                            columnNumber += token.Value.Value.Length; // Сдвигаем позицию чтения
+                        }
+                        else
+                        {
+                            // Если не удалось выделить токен, это недопустимый символ
+                            Console.WriteLine($"Недопустимый символ в строке {lineNumber + 1}, колонке {columnNumber + 1}: {line[columnNumber]}");
+                            columnNumber++; // Пропускаем недопустимый символ
+                        }
+                    }
+                }
+                return tokens;
+            }
+
+            private Token? GetNextToken(string line, int columnNumber, int lineNumber)
+            {
+                if (columnNumber >= line.Length) return null;
+
+                // Пропускаем пробелы
+                if (char.IsWhiteSpace(line[columnNumber]))
+                {
+                    int end = columnNumber;
+                    while (end < line.Length && char.IsWhiteSpace(line[end])) end++;
+                    return new Token { Type = TokenType.WHITESPACE, Value = line.Substring(columnNumber, end - columnNumber), Line = lineNumber + 1, Column = columnNumber + 1 };
+                }
+
+                // Проверяем на ключевые слова и идентификаторы
+                Match keywordMatch = Regex.Match(line.Substring(columnNumber), @"^(DECLARE|CONSTANT|INTEGER)\b", RegexOptions.IgnoreCase);
+                if (keywordMatch.Success)
+                {
+                    string keyword = keywordMatch.Value;
+                    return new Token { Type = (TokenType)Enum.Parse(typeof(TokenType), keyword.ToUpper()), Value = keyword, Line = lineNumber + 1, Column = columnNumber + 1 };
+                }
+
+                // Проверяем на идентификаторы
+                Match identifierMatch = Regex.Match(line.Substring(columnNumber), @"^[a-zA-Z_][a-zA-Z0-9_]*");
+                if (identifierMatch.Success)
+                {
+                    string identifier = identifierMatch.Value;
+                    return new Token { Type = TokenType.IDENTIFIER, Value = identifier, Line = lineNumber + 1, Column = columnNumber + 1 };
+                }
+                // Проверяем на знаки + и -
+                if (line[columnNumber] == '+' || line[columnNumber] == '-')
+                {
+                    return new Token { Type = TokenType.SIGN, Value = line[columnNumber].ToString(), Line = lineNumber + 1, Column = columnNumber + 1 };
+                }
+
+                // Проверяем на оператор присваивания
+                if (line.Substring(columnNumber).StartsWith(":="))
+                {
+                    return new Token { Type = TokenType.ASSIGNMENT, Value = ":=", Line = lineNumber + 1, Column = columnNumber + 1 };
+                }
+
+                // Проверяем на точку с запятой
+                if (line[columnNumber] == ';')
+                {
+                    return new Token { Type = TokenType.END_OPERATOR, Value = ";", Line = lineNumber + 1, Column = columnNumber + 1 };
+                }
+
+                // Проверяем на целое число
+                Match integerMatch = Regex.Match(line.Substring(columnNumber), @"^[0-9]+");
+                if (integerMatch.Success)
+                {
+                    string integerLiteral = integerMatch.Value;
+                    return new Token { Type = TokenType.INTEGER_LITERAL, Value = integerLiteral, Line = lineNumber + 1, Column = columnNumber + 1 };
+                }
+
+                // Если не удалось выделить ни один токен, это недопустимый символ
+                return new Token { Type = TokenType.INVALID, Value = line[columnNumber].ToString(), Line = lineNumber + 1, Column = columnNumber + 1 };
+            }
+
+
+        }
+
+        private void отменитьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Отменить_Click(sender, e);
+        }
+
+        private void повторитьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Повторить_Click_1(sender, e);
+        }
+
+        private void вырезатьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Вырезать_Click(sender, e);
+
+        }
+
+        private void копироватьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Копировать_Click_1(sender, e);
+        }
+
+        private void вставитьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Вставить_Click_1(sender, e);
+        }
+
+        private void удалитьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Удалить_Click(sender, e);
+        }
+
+        private void выделитьВсеToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            ВыделитьВсе_Click(sender, e);
+        }
+
+        private void создатьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Создать_Click(sender, e);
+        }
+
+        private void открытьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Открыть_Click(sender, e);
+        }
+
+        private void сохранитьToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Сохранить_Click_1(sender, e);
+        }
+
+        private void сохранитьКакToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            СохранитьКак_Click(sender, e);
+        }
+
+        private void выходToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Выход_Click(sender, e);
+        }
+
+        private void вызовСправкиToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            MessageBox.Show(
+               "Текстовый редактор\n\n" +
+               "Файл:\n" +
+               "  Создать: Создает новый файл.\n" +
+               "  Открыть: Открывает существующий файл.\n" +
+               "  Сохранить (Сохранить как): Сохраняет текущий файл.\n" +
+               "  Выход: Закрывает редактор.\n\n" +
+               "Правка:\n" +
+               "  Отменить: Отменяет последнее действие.\n" +
+               "  Повторить: Повторяет последнее действие.\n" +
+               "  Вырезать: Удаляет выделенный текст.\n" +
+               "  Копировать: Копирует выделенный текст в буфер обмена.\n" +
+               "  Вставить: Вставляет текст из буфера обмена.\n" +
+               "  Удалить: Удаляет выделенный текст.\n" +
+               "  Выделить все: Выделяет весь текст.\n\n" +
+               "Справка:\n" +
+               "  О программе: Информация о программе.\n" +
+               "  Вызов справки: Отображает эту справку.",
+               "Справка",
+               MessageBoxButtons.OK,
+               MessageBoxIcon.Information
+           );
+        }
+
+        private void пускToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            button1_Click_1(sender, e);
+        }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            вызовСправкиToolStripMenuItem_Click(sender, e);
+        }
+
+        private void dataGridView1_CellContentClick(object sender, DataGridViewCellEventArgs e)
+        {
+
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+            dataGridView1.Rows.Clear();
+
+            // Обновлённое регулярное выражение с проверкой границ
+            string passwordPattern = @"(?<!\S)(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[a-zA-Z\d!@#$%^&*]{8,}(?!\S)";
+            string inputText = richTextBox1.Text;
+
+            dataGridView1.Columns.Clear();
+            dataGridView1.Columns.Add("Value", "Найденный пароль");
+            dataGridView1.Columns.Add("Position", "Позиция");
+            dataGridView1.Columns.Add("Length", "Длина");
+
+            MatchCollection matches = Regex.Matches(inputText, passwordPattern, RegexOptions.IgnoreCase);
+
+            richTextBox1.SelectAll();
+            richTextBox1.SelectionBackColor = richTextBox1.BackColor;
+
+            foreach (Match match in matches)
+            {
+                dataGridView1.Rows.Add(match.Value, match.Index, match.Length);
+                richTextBox1.Select(match.Index, match.Length);
+                richTextBox1.SelectionBackColor = Color.Yellow;
+            }
+
+            richTextBox1.SelectionStart = 0;
+            richTextBox1.SelectionLength = 0;
+        }
+
+        private void button4_Click(object sender, EventArgs e)
+        {
+            // Очистка предыдущих результатов
+            dataGridView1.Rows.Clear();
+            ResetTextHighlighting();
+
+            // Регулярное выражение для UnionPay
+            string unionPayPattern = @"\b(62|81|82)\d{14,17}\b";
+            string inputText = richTextBox1.Text;
+
+            // Настройка DataGridView
+            ConfigureDataGridViewForCards();
+
+            // Поиск совпадений
+            MatchCollection matches = Regex.Matches(inputText, unionPayPattern);
+
+            // Обработка результатов
+            ProcessMatches(matches);
+        }
+
+        private void ConfigureDataGridViewForCards()
+        {
+            dataGridView1.Columns.Clear();
+            dataGridView1.Columns.Add("CardNumber", "Номер карты");
+            dataGridView1.Columns.Add("Position", "Позиция");
+            dataGridView1.Columns.Add("Length", "Длина");
+            dataGridView1.Columns.Add("CardType", "Тип карты");
+        }
+
+        private void ResetTextHighlighting()
+        {
+            richTextBox1.SelectAll();
+            richTextBox1.SelectionBackColor = richTextBox1.BackColor;
+            richTextBox1.SelectionStart = 0;
+            richTextBox1.SelectionLength = 0;
+        }
+
+        private void ProcessMatches(MatchCollection matches)
+        {
+            foreach (Match match in matches)
+            {
+                // Добавление данных в таблицу
+                dataGridView1.Rows.Add(
+                    match.Value,
+                    match.Index,
+                    match.Length,
+                    "UnionPay"
+                );
+
+                // Подсветка в тексте
+                richTextBox1.Select(match.Index, match.Length);
+                richTextBox1.SelectionBackColor = Color.LightSkyBlue;
+            }
+        }
+
+        private void button5_Click(object sender, EventArgs e)
+        {
+            // Очистка предыдущих результатов
+            dataGridView1.Rows.Clear();
+            dataGridView1.Columns.Clear();
+
+            // Настройка DataGridView
+            dataGridView1.Columns.Add("Path", "Unix-путь");
+            dataGridView1.Columns.Add("Position", "Позиция");
+            dataGridView1.Columns.Add("Length", "Длина");
+
+            // Регулярное выражение для Unix-путей
+            string unixPathPattern = @"(?<!\S)(/([a-zA-Z0-9\-_\.]+/)*([a-zA-Z0-9\-_\.]+\.[a-zA-Z0-9]+|[a-zA-Z0-9\-_\.]+)/?)(?!\S)";
+            string inputText = richTextBox1.Text;
+
+            // Поиск совпадений
+            MatchCollection matches = Regex.Matches(inputText, unixPathPattern);
+
+            // Сброс подсветки
+            richTextBox1.SelectAll();
+            richTextBox1.SelectionBackColor = richTextBox1.BackColor;
+
+            // Вывод результатов и подсветка
+            foreach (Match match in matches)
+            {
+                string cleanPath = match.Value.TrimEnd(',', '.');
+
+                dataGridView1.Rows.Add(
+                    cleanPath,
+                    match.Index,
+                    cleanPath.Length
+                );
+
+                richTextBox1.Select(match.Index, cleanPath.Length);
+                richTextBox1.SelectionBackColor = Color.LightSalmon;
+            }
+
+            // Возврат курсора в начало
+            richTextBox1.SelectionStart = 0;
+            richTextBox1.SelectionLength = 0;
+        }
+    }
+    public class SyntaxError
+    {
+        public string Message { get; set; }
+        public int Position { get; set; }
+        public int EndPosition { get; set; }
+        public string DiscardedFragment { get; set; }
+        public string Expected { get; set; }
+    }
+
+    public class SyntaxAnalyzer
+    {
+        public List<SyntaxError> Parse(string input)
+        {
+            List<SyntaxError> errors = new List<SyntaxError>();
+            int pos = 0;
+            input = input.Trim();
+
+            // 1. Проверка DECLARE (критическая ошибка)
+            if (!ExpectKeyword(input, ref pos, "DECLARE", errors))
+            {
+                AddError(errors, input, pos, 7, "Ожидалось ключевое слово", "DECLARE");
+                return errors; // Прекращаем анализ после критической ошибки
+            }
+
+            // 2. Проверка идентификатора
+            if (!ExpectIdentifier(input, ref pos, errors))
+            {
+                AddError(errors, input, pos, 1, "Ожидался идентификатор", "буква или _");
+                SkipToNextToken(input, ref pos);
+            }
+
+            // 3. Проверка CONSTANT
+            if (!ExpectKeyword(input, ref pos, "CONSTANT", errors))
+            {
+                string fragment = GetFragmentToNextWhitespace(input, pos);
+                AddError(errors, input, pos, fragment.Length, "Ожидалось ключевое слово", "CONSTANT");
+                SkipToNextToken(input, ref pos);
+            }
+
+            // 4. Проверка типа данных
+            if (!ExpectType(input, ref pos, errors))
+            {
+                SkipToNextToken(input, ref pos);
+            }
+
+            // 5. Проверка оператора присваивания
+            if (!ExpectAssignment(input, ref pos, errors))
+            {
+                AddError(errors, input, pos, 2, "Ожидался оператор", "':=' или '='");
+                SkipToNextToken(input, ref pos);
+            }
+
+            // 6. Проверка значения
+            if (!ExpectValue(input, ref pos, errors))
+            {
+                AddError(errors, input, pos, 1, "Ожидалось значение", "целое число");
+                SkipToNextToken(input, ref pos);
+            }
+
+            // 7. Проверка точки с запятой
+            if (!ExpectSemicolon(input, ref pos, errors))
+            {
+                AddError(errors, input, pos, 1, "Ожидался символ", "';'");
+            }
+
+            return errors;
+        }
+
+        private bool ExpectType(string input, ref int pos, List<SyntaxError> errors)
+        {
+            SkipWhitespace(input, ref pos);
+            int startPos = pos;
+
+            if (ExpectKeyword(input, ref pos, "INTEGER", null) ||
+                ExpectKeyword(input, ref pos, "REAL", null) ||
+                ExpectKeyword(input, ref pos, "STRING", null))
+            {
+                return true;
+            }
+
+            string fragment = GetFragmentToNextWhitespace(input, startPos);
+            if (!string.IsNullOrEmpty(fragment))
+            {
+                AddError(errors, input, startPos, fragment.Length,
+                        "Ожидался тип данных", "INTEGER, REAL или STRING");
+            }
+            return false;
+        }
+
+        private bool ExpectKeyword(string input, ref int pos, string keyword, List<SyntaxError> errors)
+        {
+            SkipWhitespace(input, ref pos);
+            if (pos + keyword.Length <= input.Length &&
+                string.Compare(input, pos, keyword, 0, keyword.Length, true) == 0)
+            {
+                pos += keyword.Length;
+                return true;
+            }
+            return false;
+        }
+
+        private bool ExpectIdentifier(string input, ref int pos, List<SyntaxError> errors)
+        {
+            SkipWhitespace(input, ref pos);
+            if (pos < input.Length && (char.IsLetter(input[pos]) || input[pos] == '_'))
+            {
+                pos++;
+                while (pos < input.Length && (char.IsLetterOrDigit(input[pos]) || input[pos] == '_'))
+                {
+                    pos++;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private bool ExpectAssignment(string input, ref int pos, List<SyntaxError> errors)
+        {
+            SkipWhitespace(input, ref pos);
+
+            if (pos + 2 <= input.Length && input.Substring(pos, 2) == ":=")
+            {
+                pos += 2;
+                return true;
+            }
+
+            if (pos < input.Length && input[pos] == '=')
+            {
+                pos += 1;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool ExpectValue(string input, ref int pos, List<SyntaxError> errors)
+        {
+            SkipWhitespace(input, ref pos);
+            if (pos >= input.Length) return false;
+
+            if (input[pos] == '"')
+            {
+                pos++;
+                while (pos < input.Length && input[pos] != '"') pos++;
+                if (pos < input.Length && input[pos] == '"')
+                {
+                    pos++;
+                    return true;
+                }
+                return false;
+            }
+
+            bool hasDigits = false;
+            if (input[pos] == '+' || input[pos] == '-')
+            {
+                pos++;
+            }
+            while (pos < input.Length && char.IsDigit(input[pos]))
+            {
+                hasDigits = true;
+                pos++;
+            }
+            return hasDigits;
+        }
+
+        private bool ExpectSemicolon(string input, ref int pos, List<SyntaxError> errors)
+        {
+            SkipWhitespace(input, ref pos);
+
+            if (pos < input.Length && input[pos] == ';')
+            {
+                pos++;
+                return true;
+            }
+
+            return false;
+        }
+
+        private string GetFragmentToNextWhitespace(string input, int startPos)
+        {
+            int endPos = startPos;
+            while (endPos < input.Length && !char.IsWhiteSpace(input[endPos]))
+            {
+                endPos++;
+            }
+            return endPos > startPos ? input.Substring(startPos, endPos - startPos) : "";
+        }
+
+        private void AddError(List<SyntaxError> errors, string input, int pos, int length,
+         string message, string expected)
+        {
+            errors.Add(new SyntaxError
+            {
+                Position = pos + 1,
+                EndPosition = pos + length,
+                Message = $"{message} '{expected}'",
+                Expected = expected
+            });
+        }
+
+        private void SkipToNextToken(string input, ref int pos)
+        {
+            while (pos < input.Length && !char.IsWhiteSpace(input[pos]))
+            {
+                pos++;
+            }
+            SkipWhitespace(input, ref pos);
+        }
+
+        private void SkipWhitespace(string input, ref int pos)
+        {
+            while (pos < input.Length && char.IsWhiteSpace(input[pos]))
+            {
+                pos++;
+            }
+        }
+    }
+}
+
+  
