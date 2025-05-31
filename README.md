@@ -348,10 +348,11 @@ x + 3 * y ^ 2;
 2 ^ x * y + z / (3 - w)
 ```
 
-![Тест 1]![image](https://github.com/user-attachments/assets/c5e18bc9-d00e-45f7-8a1c-4672ca987739)
+![Тест 1]![image](https://github.com/user-attachments/assets/a46023d3-ac1b-4e16-b478-51d83978bf9b)
 
-![Тест 2]![image](https://github.com/user-attachments/assets/ed19ea15-e3e2-4770-86bb-4e71cda85fc0)
+![Тест 2]![image](https://github.com/user-attachments/assets/d20aeb74-e9e5-45d9-b923-e8315ad60ac8)
 
-![Тест 3]![image](https://github.com/user-attachments/assets/b2046cb9-49dc-4cfc-a551-1e9d5664f26c)
+![Тест 3]![image](https://github.com/user-attachments/assets/d15784e2-9e00-46b7-8cbb-2c8cb800d646)
+
 
 
